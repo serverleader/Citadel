@@ -109,6 +109,11 @@ public struct SSHClientSettings: Sendable {
     internal var channelHandlers: [ChannelHandler & Sendable] = []
     public var connectTimeout: TimeAmount = .seconds(30)
 
+    /// Deadline for completing user authentication (the handshake's `authenticated`
+    /// future) after the TCP connection is established. Must be generous enough to
+    /// cover interactive (keyboard-interactive / OTP) auth, which waits on human input.
+    public var loginTimeout: TimeAmount = .seconds(30)
+
     public init(
         host: String,
         port: Int = 22,
@@ -169,7 +174,7 @@ final class SSHClientSession: Sendable {
     ) -> EventLoopFuture<Void> {
         let handshakeHandler = ClientHandshakeHandler(
             eventLoop: channel.eventLoop,
-            loginTimeout: .seconds(10)
+            loginTimeout: settings.loginTimeout
         )
         var clientConfiguration = SSHClientConfiguration(
             userAuthDelegate: settings.authenticationMethod(),
@@ -256,7 +261,8 @@ final class SSHClientSession: Sendable {
         protocolOptions: Set<SSHProtocolOption> = [],
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
         channelHandlers: [ChannelHandler] = [],
-        connectTimeout: TimeAmount = .seconds(30)
+        connectTimeout: TimeAmount = .seconds(30),
+        loginTimeout: TimeAmount = .seconds(30)
     ) async throws -> SSHClientSession {
         var settings = SSHClientSettings(
             host: host,
@@ -270,6 +276,7 @@ final class SSHClientSession: Sendable {
         settings.group = group
         settings.channelHandlers = channelHandlers
         settings.connectTimeout = connectTimeout
+        settings.loginTimeout = loginTimeout
         
         return try await connect(
             settings: settings

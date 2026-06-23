@@ -120,56 +120,48 @@ public final class SSHAuthenticationMethod: NIOSSHClientUserAuthenticationDelega
         return SSHAuthenticationMethod(combining: methods)
     }
 
+    /// True when the server advertises the method this implementation would use.
+    private func isAvailable(_ implementation: Implementation, _ availableMethods: NIOSSHAvailableUserAuthenticationMethods) -> Bool {
+        switch implementation {
+        case .user(_, offer: let offer):
+            switch offer {
+            case .password: return availableMethods.contains(.password)
+            case .hostBased: return availableMethods.contains(.hostBased)
+            case .privateKey: return availableMethods.contains(.publicKey)
+            case .none: return true
+            case .keyboardInteractive: return availableMethods.contains(.keyboardInteractive)
+            }
+        case .keyboardInteractive: return availableMethods.contains(.keyboardInteractive)
+        case .custom: return true // a custom delegate decides for itself
+        }
+    }
+
     public func nextAuthenticationType(
         availableMethods: NIOSSHAvailableUserAuthenticationMethods,
         nextChallengePromise: EventLoopPromise<NIOSSHUserAuthenticationOffer?>
     ) {
-        if implementations.isEmpty {
-            nextChallengePromise.fail(SSHClientError.allAuthenticationOptionsFailed)
+        // Skip any methods the server does NOT advertise rather than failing the whole
+        // attempt. Important for 2FA servers: it lets us prefer keyboard-interactive and
+        // not burn a Google-Authenticator attempt by offering the bare `password` method
+        // (which a PAM/OTP stack rejects as an "invalid verification code").
+        while !implementations.isEmpty {
+            let implementation = implementations.removeFirst()
+            guard isAvailable(implementation, availableMethods) else {
+                continue // not offered by the server — try the next configured method
+            }
+            switch implementation {
+            case .user(let username, offer: let offer):
+                nextChallengePromise.succeed(NIOSSHUserAuthenticationOffer(username: username, serviceName: "", offer: offer))
+            case .keyboardInteractive(let username, _):
+                nextChallengePromise.succeed(
+                    NIOSSHUserAuthenticationOffer(username: username, serviceName: "", offer: .keyboardInteractive(.init()))
+                )
+            case .custom(let implementation):
+                implementation.nextAuthenticationType(availableMethods: availableMethods, nextChallengePromise: nextChallengePromise)
+            }
             return
         }
-
-        let implementation = implementations.removeFirst()
-
-        switch implementation {
-        case .user(let username, offer: let offer):
-            switch offer {
-            case .password:
-                guard availableMethods.contains(.password) else {
-                    nextChallengePromise.fail(SSHClientError.unsupportedPasswordAuthentication)
-                    return
-                }
-            case .hostBased:
-                guard availableMethods.contains(.hostBased) else {
-                    nextChallengePromise.fail(SSHClientError.unsupportedHostBasedAuthentication)
-                    return
-                }
-            case .privateKey:
-                guard availableMethods.contains(.publicKey) else {
-                    nextChallengePromise.fail(SSHClientError.unsupportedPrivateKeyAuthentication)
-                    return
-                }
-            case .none:
-                ()
-            case .keyboardInteractive:
-                guard availableMethods.contains(.keyboardInteractive) else {
-                    nextChallengePromise.fail(SSHClientError.allAuthenticationOptionsFailed)
-                    return
-                }
-            }
-
-            nextChallengePromise.succeed(NIOSSHUserAuthenticationOffer(username: username, serviceName: "", offer: offer))
-        case .custom(let implementation):
-            implementation.nextAuthenticationType(availableMethods: availableMethods, nextChallengePromise: nextChallengePromise)
-        case .keyboardInteractive(let username, _):
-            guard availableMethods.contains(.keyboardInteractive) else {
-                nextChallengePromise.fail(SSHClientError.allAuthenticationOptionsFailed)
-                return
-            }
-            nextChallengePromise.succeed(
-                NIOSSHUserAuthenticationOffer(username: username, serviceName: "", offer: .keyboardInteractive(.init()))
-            )
-        }
+        nextChallengePromise.fail(SSHClientError.allAuthenticationOptionsFailed)
     }
 
     public func nextKeyboardInteractiveResponse(

@@ -16,9 +16,8 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // Local path to the serverleader RFC 4256 keyboard-interactive fork (push to
-        // github.com/serverleader/swift-nio-ssh before release; see SwiftRemoteShell plan).
-        .package(path: "../swift-nio-ssh"),
+        // serverleader RFC 4256 keyboard-interactive (OTP) + strict-KEX fork of swift-nio-ssh.
+        .package(url: "https://github.com/serverleader/swift-nio-ssh.git", revision: "2c8e62ae687429eaacccb0fd37d9ac71d82ecc99"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.81.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/attaswift/BigInt.git", from: "5.2.0"),

@@ -285,7 +285,8 @@ public final class SSHClient {
         protocolOptions: Set<SSHProtocolOption> = [],
         group: MultiThreadedEventLoopGroup = .singleton,
         channelHandlers: [ChannelHandler] = [],
-        connectTimeout:TimeAmount = .seconds(30)
+        connectTimeout:TimeAmount = .seconds(30),
+        loginTimeout: TimeAmount = .seconds(30)
     ) async throws -> SSHClient {
         let session = try await SSHClientSession.connect(
             host: host,
@@ -296,7 +297,8 @@ public final class SSHClient {
             protocolOptions: protocolOptions,
             group: group,
             channelHandlers: channelHandlers,
-            connectTimeout: connectTimeout
+            connectTimeout: connectTimeout,
+            loginTimeout: loginTimeout
         )
         
         let client = SSHClient(
