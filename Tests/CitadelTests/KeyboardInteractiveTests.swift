@@ -60,6 +60,8 @@ final class KeyboardInteractiveTests: XCTestCase {
 
     /// Verifies that `nextKeyboardInteractiveResponse` routes the challenge to the
     /// `onChallenge` closure and that the response is cascaded to the promise.
+    /// Dispatches through `any NIOSSHClientUserAuthenticationDelegate` (the existential)
+    /// to prove witness-table dispatch reaches the override — not just concrete-type dispatch.
     func testChallengeResponseRouting() throws {
         let eventLoop = EmbeddedEventLoop()
         defer { try? eventLoop.syncShutdownGracefully() }
@@ -74,8 +76,10 @@ final class KeyboardInteractiveTests: XCTestCase {
             return eventLoop.makeSucceededFuture(expectedResponse)
         }
 
+        // Call through the existential to prove witness-table dispatch reaches the override.
+        let delegate: any NIOSSHClientUserAuthenticationDelegate = method
         let responsePromise = eventLoop.makePromise(of: [String]?.self)
-        method.nextKeyboardInteractiveResponse(
+        delegate.nextKeyboardInteractiveResponse(
             name: "OTP",
             instruction: "Enter your code",
             prompts: [NIOSSHKeyboardInteractivePromptField(prompt: "Code: ", echo: false)],
@@ -92,14 +96,18 @@ final class KeyboardInteractiveTests: XCTestCase {
 
     /// Verifies that a method with no KI implementation returns nil (abort) when
     /// `nextKeyboardInteractiveResponse` is called on it.
+    /// Dispatches through `any NIOSSHClientUserAuthenticationDelegate` (the existential)
+    /// to prove witness-table dispatch reaches the override for the non-KI case too.
     func testNonKIMethodReturnsNilForChallenge() throws {
         let eventLoop = EmbeddedEventLoop()
         defer { try? eventLoop.syncShutdownGracefully() }
 
         let method = SSHAuthenticationMethod.passwordBased(username: "u", password: "p")
 
+        // Call through the existential to prove witness-table dispatch reaches the override.
+        let delegate: any NIOSSHClientUserAuthenticationDelegate = method
         let responsePromise = eventLoop.makePromise(of: [String]?.self)
-        method.nextKeyboardInteractiveResponse(
+        delegate.nextKeyboardInteractiveResponse(
             name: "OTP",
             instruction: "Enter your code",
             prompts: [NIOSSHKeyboardInteractivePromptField(prompt: "Code: ", echo: false)],
@@ -113,5 +121,45 @@ final class KeyboardInteractiveTests: XCTestCase {
 
         // .some(nil) means the future succeeded with nil (abort signal)
         XCTAssertEqual(result, .some(nil))
+    }
+
+    /// Verifies that a combined object routes KI challenges to the correct implementation
+    /// when called through the `any NIOSSHClientUserAuthenticationDelegate` existential.
+    /// This proves the combined object's witness-table dispatch is correct, not just
+    /// the sequencing of auth offers.
+    func testCombinedExistentialKIRouting() throws {
+        let eventLoop = EmbeddedEventLoop()
+        defer { try? eventLoop.syncShutdownGracefully() }
+
+        // Use a reference type so the @Sendable closure can mutate it without
+        // triggering a Swift 6 SendableClosureCaptures warning on a captured var.
+        final class Box<T>: @unchecked Sendable { var value: T; init(_ v: T) { value = v } }
+        let closureReached = Box(false)
+        let combined = SSHAuthenticationMethod.combine([
+            .passwordBased(username: "u", password: "p"),
+            .keyboardInteractive(username: "u") { _ in
+                closureReached.value = true
+                return eventLoop.makeSucceededFuture(["123456"])
+            },
+        ])
+
+        // Call through the existential — proves witness-table dispatch routes the
+        // challenge to the KI closure inside the combined object, not a no-op default.
+        let delegate: any NIOSSHClientUserAuthenticationDelegate = combined
+        let responsePromise = eventLoop.makePromise(of: [String]?.self)
+        delegate.nextKeyboardInteractiveResponse(
+            name: "OTP",
+            instruction: "Enter your code",
+            prompts: [NIOSSHKeyboardInteractivePromptField(prompt: "Code: ", echo: false)],
+            responsePromise: responsePromise
+        )
+        eventLoop.run()
+
+        var result: [String]??
+        responsePromise.futureResult.whenSuccess { result = $0 }
+        eventLoop.run()
+
+        XCTAssertTrue(closureReached.value, "KI closure must be reached via existential dispatch on combined object")
+        XCTAssertEqual(result, .some(["123456"]))
     }
 }
