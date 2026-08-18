@@ -5,9 +5,14 @@ import NIOConcurrencyHelpers
 
 final class SSHClientInboundChannelHandler: Sendable {
     typealias TCPIPForwardHandler = @Sendable (Channel, SSHChannelType.ForwardedTCPIP) -> EventLoopFuture<Void>
+    typealias AgentForwardHandler = @Sendable (Channel) -> EventLoopFuture<Void>
+    typealias X11ForwardHandler = @Sendable (Channel, SSHChannelType.X11) -> EventLoopFuture<Void>
+
     let forwardedTCPIPHosts = NIOLockedValueBox(
         [SSHRemotePortForward: TCPIPForwardHandler]()
     )
+    let forwardedAgent = NIOLockedValueBox<AgentForwardHandler?>(nil)
+    let forwardedX11 = NIOLockedValueBox<X11ForwardHandler?>(nil)
 
     init() {}
 
@@ -40,6 +45,30 @@ final class SSHClientInboundChannelHandler: Sendable {
         }
     }
 
+    nonisolated func registerForwardedAgent(handler: @escaping AgentForwardHandler) -> HandleRegistrationResult {
+        forwardedAgent.withLockedValue { current in
+            guard current == nil else { return .alreadyRegistered }
+            current = handler
+            return .success
+        }
+    }
+
+    nonisolated func unregisterForwardedAgent() {
+        forwardedAgent.withLockedValue { $0 = nil }
+    }
+
+    nonisolated func registerX11(handler: @escaping X11ForwardHandler) -> HandleRegistrationResult {
+        forwardedX11.withLockedValue { current in
+            guard current == nil else { return .alreadyRegistered }
+            current = handler
+            return .success
+        }
+    }
+
+    nonisolated func unregisterX11() {
+        forwardedX11.withLockedValue { $0 = nil }
+    }
+
     nonisolated func handleChannel(channel: Channel, channelType: SSHChannelType) -> EventLoopFuture<Void> {
         switch channelType {
         case .session:
@@ -57,6 +86,20 @@ final class SSHClientInboundChannelHandler: Sendable {
                 }
 
                 return host(channel, forwardedTCPIP)
+            }
+        case .forwardedAgent:
+            return forwardedAgent.withLockedValue { handler in
+                guard let handler else {
+                    return channel.eventLoop.makeFailedFuture(CitadelError.channelCreationFailed)
+                }
+                return handler(channel)
+            }
+        case .x11(let request):
+            return forwardedX11.withLockedValue { handler in
+                guard let handler else {
+                    return channel.eventLoop.makeFailedFuture(CitadelError.channelCreationFailed)
+                }
+                return handler(channel, request)
             }
         }
     }

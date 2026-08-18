@@ -268,6 +268,7 @@ extension SSHClient {
 
     internal func _executeCommandStream(
         environment: [SSHChannelRequestEvent.EnvironmentRequest] = [],
+        forwarding: SSHSessionForwarding = .init(),
         mode: CommandMode
     ) async throws -> (channel: Channel, output: AsyncThrowingStream<ExecCommandOutput, Error>) {
         let (stream, streamContinuation) = AsyncThrowingStream<ExecCommandOutput, Error>.makeStream()
@@ -322,11 +323,20 @@ extension SSHClient {
             try await channel.triggerUserOutboundEvent(env)
         }
 
-        switch mode {
-        case .pty(let request):
+        if case .pty(let request) = mode {
             try await channel.triggerUserOutboundEvent(request)
-            fallthrough
-        case .tty:
+        }
+        if forwarding.agent {
+            try await channel.triggerUserOutboundEvent(
+                SSHChannelRequestEvent.AgentForwardingRequest(wantReply: false)
+            )
+        }
+        if let x11 = forwarding.x11 {
+            try await channel.triggerUserOutboundEvent(x11)
+        }
+
+        switch mode {
+        case .pty, .tty:
             try await channel.triggerUserOutboundEvent(SSHChannelRequestEvent.ShellRequest(
                 wantReply: true
             ))
@@ -350,10 +360,12 @@ extension SSHClient {
     public func withPTY(
         _ request: SSHChannelRequestEvent.PseudoTerminalRequest,
         environment: [SSHChannelRequestEvent.EnvironmentRequest] = [],
+        forwarding: SSHSessionForwarding = .init(),
         perform: (_ inbound: TTYOutput, _ outbound: TTYStdinWriter) async throws -> Void
     ) async throws {
         let (channel, output) = try await _executeCommandStream(
             environment: environment,
+            forwarding: forwarding,
             mode: .pty(request)
         )
 
@@ -399,10 +411,12 @@ extension SSHClient {
     @available(macOS 15.0, *)
     public func withTTY(
         environment: [SSHChannelRequestEvent.EnvironmentRequest] = [],
+        forwarding: SSHSessionForwarding = .init(),
         perform: (_ inbound: TTYOutput, _ outbound: TTYStdinWriter) async throws -> Void
     ) async throws {
         let (channel, output) = try await _executeCommandStream(
             environment: environment,
+            forwarding: forwarding,
             mode: .tty(command: nil)
         )
 
