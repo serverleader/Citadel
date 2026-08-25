@@ -13,6 +13,9 @@ extension Insecure {
 extension Insecure.RSA {
     public final class PublicKey: NIOSSHPublicKeyProtocol {
         public static let publicKeyPrefix = "ssh-rsa"
+        /// RFC 8332: the key blob stays `ssh-rsa`, signatures are `rsa-sha2-256`.
+        /// OpenSSH 8.8+ refuses SHA-1 `ssh-rsa` signatures by default.
+        public static let signatureAlgorithmName = "rsa-sha2-256"
         public static let keyExchangeAlgorithms = ["diffie-hellman-group1-sha1", "diffie-hellman-group14-sha1"]
         
         // PublicExponent e
@@ -73,15 +76,15 @@ extension Insecure.RSA {
                 return false
             }
             
-            var clientSignature = [UInt8](repeating: 0, count: 20)
+            var clientSignature = [UInt8](repeating: 0, count: 32)
             let digest = Array(digest)
-            CCryptoBoringSSL_SHA1(digest, digest.count, &clientSignature)
+            CCryptoBoringSSL_SHA256(digest, digest.count, &clientSignature)
             
             let signature = Array(signature.rawRepresentation)
             return CCryptoBoringSSL_RSA_verify(
-                NID_sha1,
+                NID_sha256,
                 clientSignature,
-                20,
+                32,
                 signature,
                 signature.count,
                 context
@@ -138,7 +141,7 @@ extension Insecure.RSA {
     }
     
     public struct Signature: ContiguousBytes, NIOSSHSignatureProtocol {
-        public static let signaturePrefix = "ssh-rsa"
+        public static let signaturePrefix = "rsa-sha2-256"
         
         public let rawRepresentation: Data
         
@@ -230,12 +233,12 @@ extension Insecure.RSA {
                 throw CitadelError.signingError
             }
             
-            let hash = Array(Insecure.SHA1.hash(data: message))
+            let hash = Array(SHA256.hash(data: message))
             let out = UnsafeMutablePointer<UInt8>.allocate(capacity: 4096)
             defer { out.deallocate() }
             var outLength: UInt32 = 4096
             let result = CCryptoBoringSSL_RSA_sign(
-                NID_sha1,
+                NID_sha256,
                 hash,
                 Int(hash.count),
                 out,
