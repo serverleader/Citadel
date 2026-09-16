@@ -9,7 +9,6 @@ let package = Package(
         .macOS(.v14),
         .iOS(.v17)
     ],
-    swiftLanguageModes: [.v6],
     products: [
         .library(
             name: "Citadel",
@@ -54,5 +53,6 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )
