@@ -238,7 +238,7 @@ final class CitadelServerDelegate: Sendable, GlobalRequestDelegate {
 /// This class is used to start an SSH server on a specified host and port.
 /// The server can be closed using the `close()` method.
 /// - Note: This class is not thread safe.
-public final class SSHServer {
+public final class SSHServer: @unchecked Sendable {
     let channel: Channel
     let delegate: CitadelServerDelegate
     let logger: Logger

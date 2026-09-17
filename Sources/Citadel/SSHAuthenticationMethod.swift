@@ -1,5 +1,6 @@
 import NIO
-import NIOSSH
+import NIOConcurrencyHelpers
+@preconcurrency import NIOSSH
 import Crypto
 
 /// A keyboard-interactive request surfaced by Citadel (mirrors RFC 4256 INFO_REQUEST).
@@ -15,29 +16,29 @@ public struct NIOSSHKeyboardInteractivePrompt: Sendable {
 }
 
 /// Represents an authentication method.
-public final class SSHAuthenticationMethod: NIOSSHClientUserAuthenticationDelegate {
-    private enum Implementation {
+public final class SSHAuthenticationMethod: NIOSSHClientUserAuthenticationDelegate, Sendable {
+    private enum Implementation: Sendable {
         case custom(NIOSSHClientUserAuthenticationDelegate)
         case user(String, offer: NIOSSHUserAuthenticationOffer.Offer)
         case keyboardInteractive(String, onChallenge: @Sendable (NIOSSHKeyboardInteractivePrompt) -> EventLoopFuture<[String]?>)
     }
 
     private let allImplementations: [Implementation]
-    private var implementations: [Implementation]
+    private let implementations: NIOLockedValueBox<[Implementation]>
 
     internal init(
         username: String,
         offer: NIOSSHUserAuthenticationOffer.Offer
     ) {
         self.allImplementations = [.user(username, offer: offer)]
-        self.implementations = allImplementations
+        self.implementations = NIOLockedValueBox(allImplementations)
     }
 
     internal init(
         custom: NIOSSHClientUserAuthenticationDelegate
     ) {
         self.allImplementations = [.custom(custom)]
-        self.implementations = allImplementations
+        self.implementations = NIOLockedValueBox(allImplementations)
     }
 
     internal init(
@@ -45,12 +46,12 @@ public final class SSHAuthenticationMethod: NIOSSHClientUserAuthenticationDelega
         onChallenge: @escaping @Sendable (NIOSSHKeyboardInteractivePrompt) -> EventLoopFuture<[String]?>
     ) {
         self.allImplementations = [.keyboardInteractive(username, onChallenge: onChallenge)]
-        self.implementations = allImplementations
+        self.implementations = NIOLockedValueBox(allImplementations)
     }
 
     internal init(combining methods: [SSHAuthenticationMethod]) {
         self.allImplementations = methods.flatMap { $0.allImplementations }
-        self.implementations = allImplementations
+        self.implementations = NIOLockedValueBox(allImplementations)
     }
 
     /// Creates a password based authentication method.
@@ -144,8 +145,7 @@ public final class SSHAuthenticationMethod: NIOSSHClientUserAuthenticationDelega
         // attempt. Important for 2FA servers: it lets us prefer keyboard-interactive and
         // not burn a Google-Authenticator attempt by offering the bare `password` method
         // (which a PAM/OTP stack rejects as an "invalid verification code").
-        while !implementations.isEmpty {
-            let implementation = implementations.removeFirst()
+        while let implementation = implementations.withLockedValue({ $0.isEmpty ? nil : $0.removeFirst() }) {
             guard isAvailable(implementation, availableMethods) else {
                 continue // not offered by the server — try the next configured method
             }

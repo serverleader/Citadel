@@ -276,14 +276,14 @@ extension SSHClient {
         let hasReceivedChannelSuccess = NIOLockedValueBox<Bool>(false)
         let exitCode = NIOLockedValueBox<Int?>(nil)
 
-        let handler = ExecCommandHandler(logger: logger) { channel, output in
+        let handler = ExecCommandHandler(logger: logger) { [logger] channel, output in
             switch output {
             case .stdout(let stdout):
                 streamContinuation.yield(.stdout(stdout))
             case .stderr(let stderr):
                 streamContinuation.yield(.stderr(stderr))
             case .eof(let error):
-                self.logger.debug("EOF triggered, ending the command stream.")
+                logger.debug("EOF triggered, ending the command stream.")
                 if let error {
                     streamContinuation.finish(throwing: error)
                 } else if let exitCode = exitCode.withLockedValue({ $0 }), exitCode != 0 {
@@ -301,7 +301,7 @@ extension SSHClient {
                     hasReceivedChannelSuccess.withLockedValue({ $0 = true })
                 }
             case .exit(let status):
-                self.logger.debug("Process exited with status code \(status). Will await on EOF for correct exit")
+                logger.debug("Process exited with status code \(status). Will await on EOF for correct exit")
                 exitCode.withLockedValue({ $0 = status })
             }
         }

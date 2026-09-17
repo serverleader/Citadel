@@ -2,12 +2,12 @@ import NIO
 import NIOSSH
 import Logging
 
-public enum ShellClientEvent {
+public enum ShellClientEvent: Sendable {
     case stdin(ByteBuffer)
 }
 
 public struct ShellServerEvent: Sendable {
-    internal enum Event {
+    internal enum Event: Sendable {
         case stdout(ByteBuffer)
     }
     
@@ -69,22 +69,28 @@ final class ShellServerInboundHandler: ChannelInboundHandler {
             windowSize: windowSize.stream
         )
 
+        let delegate = self.delegate
+        let inboundStream = self.inbound.stream
+        let outbound = self.outbound
+        // Channel is event-loop bound; NIO async writeAndFlush hops to that loop.
+        nonisolated(unsafe) let writeChannel = channel
+
         let done = context.eventLoop.makePromise(of: Void.self)
         done.completeWithTask {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    try await self.delegate.startShell(
-                        inbound: self.inbound.stream,
-                        outbound: ShellOutboundWriter(continuation: self.outbound.continuation),
+                    try await delegate.startShell(
+                        inbound: inboundStream,
+                        outbound: ShellOutboundWriter(continuation: outbound.continuation),
                         context: shellContext
                     )
                 }
 
                 group.addTask {
-                    for try await message in self.outbound.stream {
+                    for try await message in outbound.stream {
                         switch message.event {
                         case .stdout(let data):
-                            try await channel.writeAndFlush(data)
+                            try await writeChannel.writeAndFlush(data)
                         }
                     }
                 }

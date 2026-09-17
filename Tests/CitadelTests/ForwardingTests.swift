@@ -1,4 +1,5 @@
 import NIOCore
+import NIOConcurrencyHelpers
 import NIOEmbedded
 import NIOSSH
 @testable import Citadel
@@ -8,16 +9,16 @@ final class ForwardingTests: XCTestCase {
     func testForwardedAgentDispatchesRegisteredHandler() throws {
         let inbound = SSHClientInboundChannelHandler()
         let channel = EmbeddedChannel()
-        var handled = false
+        let handled = NIOLockedValueBox(false)
 
         XCTAssertRegistrationSucceeded(inbound.registerForwardedAgent { received in
             XCTAssertTrue(received === channel)
-            handled = true
+            handled.withLockedValue { $0 = true }
             return received.eventLoop.makeSucceededVoidFuture()
         })
 
         try inbound.handleChannel(channel: channel, channelType: .forwardedAgent).wait()
-        XCTAssertTrue(handled)
+        XCTAssertTrue(handled.withLockedValue { $0 })
         XCTAssertNoThrow(try channel.finish())
     }
 
@@ -25,15 +26,15 @@ final class ForwardingTests: XCTestCase {
         let inbound = SSHClientInboundChannelHandler()
         let channel = EmbeddedChannel()
         let originator = try SocketAddress(ipAddress: "127.0.0.1", port: 6010)
-        var received: SSHChannelType.X11?
+        let received = NIOLockedValueBox<SSHChannelType.X11?>(nil)
 
         XCTAssertRegistrationSucceeded(inbound.registerX11 { _, request in
-            received = request
+            received.withLockedValue { $0 = request }
             return channel.eventLoop.makeSucceededVoidFuture()
         })
 
         try inbound.handleChannel(channel: channel, channelType: .x11(.init(originatorAddress: originator))).wait()
-        XCTAssertEqual(received?.originatorAddress, originator)
+        XCTAssertEqual(received.withLockedValue { $0 }?.originatorAddress, originator)
         XCTAssertNoThrow(try channel.finish())
     }
 

@@ -303,7 +303,7 @@ final class SSHClientSession: Sendable {
         algorithms: SSHAlgorithms = SSHAlgorithms(),
         protocolOptions: Set<SSHProtocolOption> = [],
         group: EventLoopGroup = MultiThreadedEventLoopGroup.singleton,
-        channelHandlers: [ChannelHandler] = [],
+        channelHandlers: [ChannelHandler & Sendable] = [],
         connectTimeout: TimeAmount = .seconds(30),
         loginTimeout: TimeAmount = .seconds(30)
     ) async throws -> SSHClientSession {

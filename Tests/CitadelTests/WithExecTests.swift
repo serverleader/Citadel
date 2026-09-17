@@ -13,7 +13,7 @@ final class WithExecTests: XCTestCase {
 
     private func runTest(
         timeout: Duration = .seconds(5),
-        perform: @escaping (SSHServer, SSHClient) async throws -> Void
+        perform: @escaping @Sendable (SSHServer, SSHClient) async throws -> Void
     ) async throws {
         let authDelegate = AuthDelegate(supportedAuthenticationMethods: .password) { request, promise in
             switch request.request {

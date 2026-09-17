@@ -303,10 +303,13 @@ final class Citadel2Tests: XCTestCase {
 
         try await client.withTTY { inbound, outbound in
             try await outbound.write(ByteBuffer(string: "cat"))
+            struct Unchecked<T>: @unchecked Sendable { let value: T }
+            let inboundBox = Unchecked(value: inbound)
+            let outboundBox = Unchecked(value: outbound)
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask {
                     var a = UInt8(ascii: "a")
-                    for try await value in inbound {
+                    for try await value in inboundBox.value {
                         switch value {
                         case .stdout(let value):
                             for byte in value.readableBytesView {
@@ -322,7 +325,7 @@ final class Citadel2Tests: XCTestCase {
                 group.addTask {
                     for i: UInt8 in UInt8(ascii: "a") ... UInt8(ascii: "z") {
                         let value = ByteBufferAllocator().buffer(integer: i)
-                        try await outbound.write(value)
+                        try await outboundBox.value.write(value)
                     }
                 }
 

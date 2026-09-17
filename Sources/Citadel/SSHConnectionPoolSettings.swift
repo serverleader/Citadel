@@ -1,11 +1,11 @@
-internal struct SSHConnectionPoolSettings {
+internal struct SSHConnectionPoolSettings: Sendable {
     init() {}
     
     internal var reconnect = _SSHReconnectMode.never
 }
 
-internal struct _SSHReconnectMode {
-    internal enum Mode {
+internal struct _SSHReconnectMode: Sendable {
+    internal enum Mode: Sendable {
         case once(String, Int)
         case always(String, Int)
         case never
@@ -25,7 +25,7 @@ internal struct _SSHReconnectMode {
 }
 
 public struct SSHReconnectMode: Equatable, Sendable {
-    internal enum _Mode {
+    internal enum _Mode: Sendable {
         case once, always, never
     }
     

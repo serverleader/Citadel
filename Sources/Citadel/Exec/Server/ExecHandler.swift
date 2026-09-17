@@ -62,10 +62,11 @@ final class ExecHandler: ChannelDuplexHandler {
     }
     
     func channelInactive(context: ChannelHandlerContext) {
+        let execContext = self.context
+        self.context = nil
+        self.pipeChannel = nil
         Task {
-            try await self.context?.terminate()
-            self.context = nil
-            self.pipeChannel = nil
+            try await execContext?.terminate()
         }
         context.fireChannelInactive()
     }
@@ -82,13 +83,15 @@ final class ExecHandler: ChannelDuplexHandler {
             }
         case let event as SSHChannelRequestEvent.EnvironmentRequest:
             if let delegate = delegate {
+                let (name, value) = (event.name, event.value)
                 Task {
-                    try await delegate.setEnvironmentValue(event.value, forKey: event.name)
+                    try await delegate.setEnvironmentValue(value, forKey: name)
                 }
             }
         case ChannelEvent.inputClosed:
+            let execContext = self.context
             Task {
-                try await self.context?.inputClosed()
+                try await execContext?.inputClosed()
             }
         default:
             context.fireUserInboundEventTriggered(event)
@@ -104,11 +107,14 @@ final class ExecHandler: ChannelDuplexHandler {
     }
     
     private func exec(_ event: SSHChannelRequestEvent.ExecRequest, delegate: ExecDelegate, channel: Channel) {
+        let command = event.command
+        let wantReply = event.wantReply
+        let loopBoundSelf = NIOLoopBound(self, eventLoop: channel.eventLoop)
         let successPromise = channel.eventLoop.makePromise(of: Int.self)
         let handler = ExecOutputHandler(username: username) { code in
             successPromise.succeed(code)
         } onFailure: { _ in
-            if event.wantReply {
+            if wantReply {
                 channel.triggerUserOutboundEvent(ChannelFailureEvent()).whenComplete { _ in
                     channel.close(promise: nil)
                 }
@@ -145,21 +151,25 @@ final class ExecHandler: ChannelDuplexHandler {
                     outputDescriptor: dup(handler.stdinPipe.fileHandleForWriting.fileDescriptor)
                 )
         }.flatMap { pipeChannel -> EventLoopFuture<Channel> in
-            self.pipeChannel = pipeChannel
-            let start = channel.eventLoop.makePromise(of: Void.self)
+            loopBoundSelf.value.pipeChannel = pipeChannel
+            let start = channel.eventLoop.makePromise(of: (any ExecCommandContext)?.self)
             start.completeWithTask {
                 do {
-                    self.context = try await delegate.start(
-                        command: event.command,
+                    return try await delegate.start(
+                        command: command,
                         outputHandler: handler
                     )
                 } catch {
                     try await pipeChannel.close(mode: .all)
+                    return nil
                 }
             }
             
-            return start.futureResult.flatMap {
-                if event.wantReply {
+            return start.futureResult.flatMap { execContext in
+                if let execContext {
+                    loopBoundSelf.value.context = execContext
+                }
+                if wantReply {
                     return channel.triggerUserOutboundEvent(ChannelSuccessEvent()).map {
                         pipeChannel
                     }
@@ -178,7 +188,7 @@ final class ExecHandler: ChannelDuplexHandler {
             case .success:
                 channel.close(promise: nil)
             case .failure:
-                if event.wantReply {
+                if wantReply {
                     channel.triggerUserOutboundEvent(ChannelFailureEvent()).whenComplete { _ in
                         channel.close(promise: nil)
                     }

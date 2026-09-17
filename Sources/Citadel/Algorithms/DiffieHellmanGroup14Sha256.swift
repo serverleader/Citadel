@@ -16,7 +16,8 @@ public struct DiffieHellmanGroup14Sha256: NIOSSHKeyExchangeAlgorithmProtocol {
     private var theirKey: Insecure.RSA.PublicKey?
     private var sharedSecret: Data?
     public let ourKey: Insecure.RSA.PrivateKey
-    public static var ourKey: Insecure.RSA.PrivateKey?
+    // Test hook for deterministic DH; not a production shared key.
+    nonisolated(unsafe) public static var ourKey: Insecure.RSA.PrivateKey?
     
     private struct _KeyExchangeResult {
         var sessionID: ByteBuffer
