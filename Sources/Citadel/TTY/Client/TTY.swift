@@ -44,7 +44,7 @@ public struct ExecCommandStream {
 }
 
 /// Represents the output from an executed command, either stdout or stderr data
-public enum ExecCommandOutput {
+public enum ExecCommandOutput: Sendable {
     /// Standard output data as a byte buffer
     case stdout(ByteBuffer)
     /// Standard error data as a byte buffer 
@@ -53,7 +53,7 @@ public enum ExecCommandOutput {
 
 /// An async sequence that provides TTY output data
 @available(macOS 15.0, *)
-public struct TTYOutput: AsyncSequence {
+public struct TTYOutput: AsyncSequence, Sendable {
     internal let sequence: AsyncThrowingStream<ExecCommandOutput, Error>
     public typealias Element = ExecCommandOutput
 
@@ -72,7 +72,7 @@ public struct TTYOutput: AsyncSequence {
 }
 
 /// Allows writing data to a TTY's standard input and controlling terminal properties
-public struct TTYStdinWriter {
+public struct TTYStdinWriter: Sendable {
     internal let channel: Channel
 
     /// Write raw bytes to the TTY's standard input
