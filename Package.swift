@@ -16,8 +16,9 @@ let package = Package(
         ),
     ],
     dependencies: [
-        // serverleader RFC 4256 keyboard-interactive (OTP) + strict-KEX fork of swift-nio-ssh.
-        .package(url: "https://github.com/serverleader/swift-nio-ssh.git", revision: "b8292756ffc4e77da06b19b25f1665192d22e149"),
+        // serverleader fork of swift-nio-ssh: RFC 4256 keyboard-interactive (OTP) and strict KEX
+        // (Terrapin CVE-2023-48795; sequence numbers reset after every NEWKEYS, rekeys included).
+        .package(url: "https://github.com/serverleader/swift-nio-ssh.git", revision: "7e578abce516d89f4506bf1d4970a958598835bd"),
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.81.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.0.0"),
         .package(url: "https://github.com/attaswift/BigInt.git", "5.2.0"..<"7.0.0"),
